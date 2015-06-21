@@ -1,0 +1,161 @@
+Analysis of the *Weight Lifting Exercise Dataset* <sup>1</sup>
+==============================================================
+
+## Overview of dataset and goal
+
+The dataset, available at [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har), captures information from a variety of sensors attached to volunteers, while each volunteer lifts a dumbbell in 5 different ways (1 correct method, 4 incorrect methods). The sensors, attached to glove, arm, belt, and dumbbell contain [gyroscopes](https://en.wikipedia.org/?title=Gyroscope), [accelerometers](https://en.wikipedia.org/wiki/Accelerometer), and [magnetometers](https://en.wikipedia.org/wiki/Magnetometer) measuring various aspects and dimensions of the rotation, speed, and movement of the participants body as they lift the dumbbell.
+
+The goal of the original experiment<sup>1</sup>, and of this analysis, is to build a classification model of the various weight lifting techniques using the sensor information. In this way, given new sensor data, we could use the model to predict the method of lifting the participant is using. This could then be used to, for example, provided automated feedback to weight lifters on correct technique.
+
+## Investigating the data
+
+For this analysis, we consider [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) subsets of the original data, provided as part of the [Practical Machine Learning](https://class.coursera.org/predmachlearn-015) course at [Coursera](https://www.coursera.org).
+
+Once these data-sets have been downloaded, we can load the training data into R and begin to investigate. To start with, before any analysis begins, we partition the data into a training and test set to provide clean test data for later validation of our results, untouched by the rest of our investigation.
+
+```{r}
+library(caret)
+
+data = read.csv("pml-training.csv", header=TRUE)
+
+# Partition into test + training sets
+tRows = createDataPartition(1:nrow(data), p=0.8, list=FALSE)
+trainingData = data[tRows,]
+testData = data[-tRows,]
+```
+
+Our next step is to dig into the data, both by viewing the raw data directly and examining summary statistics (using e.g., R's `summary` function). This immediately shows us that:
+
+-  There are 6 participants in the extracted training dataset.
+-  There are 160 variables in total.
+-  Various factors relating to the time/order of the measurement are captured (e.g., X, raw_timestamp_part_1, raw_timestamp_part_2 etc).
+-  Measurements are split into time windows; the row of data at the end of the window has summary statistics (but no other row does).
+-  The rest of the measurements are raw sensor data with numeric values.
+-  The output variable is the "classe" variable, with the 5 classes A, B, C, D and E.
+-  There are a lot of columns with a considerable number of NA values (which will make analysis more difficult).
+    
+
+## Cleaning the data
+
+Given the above, before we can begin to build any kind of predictive model, we will need to clean the data and prune the variables given to a sensible set of predictors.
+
+Firstly, it is important to note that certain variables are not suitable predictors. For example, the *new_window* variable (as well as other time variables) indicate the time window in which the measurement is taken, but each time window is directly associated with the method of lifting (i.e., *classe*) it was measured for. Therefore, if we include time information in our set of predictor variables when modelling, there is a strong chance that our model with use these variables to overfit on the training data. However, performance will then be very poor on the future data, as the same relationship between time and/or window number will not exist outside of the training data. Furthermore, as the task is to predict the method of lift for future results (and presumably future *different* users), it does not make sense to use the user as a predictor. Also, even if we did wish to compare similarities or differences between users, there are only 6 users, which is a relatively small dataset to draw any inference from. Therefore, we restrict ourselves to non-timekeeping, non-user rows.
+
+```{r}
+# Keep track of the rows and columns we are using for prediction.
+pRows = 1:nrow(trainingData)  # Predictor Rows
+nonPredCols = c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+                "num_window", "new_window", "cvtd_timestamp", "classe")
+pCols = which(!(names(trainingData) %in% nonPredCols))  # Predicator Columns
+oVar = which(names(trainingData) == "classe")  # Output Variable
+```
+
+Secondly, we remove columns where the majority of the values are null, as these NAs will propagate in statistical calculations, and columns with very little data are unlikely to provide high predictive power.
+
+```{r}
+naSummary_col = function(col) {
+  return(sum(is.na(col))/length(col));
+}
+
+naSummary = function(df) {
+  a = sapply(df,naSummary_col);
+  names(a) = names(df);
+  return(a);
+}
+
+# Remove columns where most data is NA
+naColPercs = naSummary(trainingData[pRows, pCols])
+naCols = which(naColPercs > 0.7)
+pCols = pCols[-naCols]
+```
+
+Furthermore, we make here the assumption that the intention in future is to read raw sensor data (this is backed up by the lack of window data in the [Practical Machine Learning course test data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)). Therefore, we remove these data rows, so as to avoid using these data points to overfit on the training set.
+
+```{r}
+# Since we will be reading data as it is streamed, we will not have
+# window information, therefore we need to work on the raw data.
+rawRows= which(trainingData[pRows,]$new_window == "no")
+pRows = pRows[rawRows]
+```
+
+Upon further inspection, some columns of the data-set contain constant data (i.e., all the same value). As these columns do not change across different lifting techniques, they clearly can not be used as a predictor. Therefore, for brevity and performance reasons, we remove these columns.
+
+```{r}
+# Remove constant columns
+# If they don't vary then they can't be used as differentiators between classes.
+filteredData = data.frame(sapply(trainingData[pRows, pCols], as.numeric))
+noVarCols = which(sapply(filteredData, var) == 0)
+pCols = pCols[-noVarCols]
+```
+
+After removing columns with lots of NAs and those with constant data etc, we are left with 52 columns. In general, fewer predictors will both improve the speed of training, result in more understandable models and reduce overfitting. Therefore, with this aim in mind, we further reduce the number of predictors by looking for those variables in the dataset with a high degree of correlation and removing those variables.
+
+```{r}
+# Remove redundant variables which are highly correlated with others.
+# If they are highly correlated, we can use the variable they are correlated
+# with as a predictor. 
+filteredData = data.frame(sapply(trainingData[pRows, pCols], as.numeric))
+corrVars = findCorrelation(cor(filteredData), cutoff=.8)
+pCols = pCols[-corrVars]
+```
+
+Finally, sensor data is notorious for containing the strange odd outlier. Such outliers can bias the model when training and are likely not indicative of the general sensor behaviour in each of the lifting techniques. Therefore we remove extreme data for which there are very few (1 in these cases) data items.
+
+```{r, boxplot, fig.width=10, fig.height=5, message=FALSE}
+# BoxPlot to analyse where the outliers are.
+boxplot(trainingData[pRows, pCols])
+
+# Remove outliers
+nonOutliers = which(trainingData$gyros_dumbbell_y <50 &
+                    trainingData$magnet_dumbbell_y > -1000)
+pRows = intersect(pRows, nonOutliers)
+```
+
+This leaves us with 40 predictors, all of which are raw sensor readings.
+
+```{r}
+names(trainingData[,pCols])
+```
+
+## Building a model
+
+As we are dealing with a classification problem, the data from any single predictor or even combinations of multiple overlap considerably, and the sensor data seems unlikely to be additive in any way (e.g., linear regression etc probably wouldn't work that well), a natural first choice classification model is *random forests*.
+
+We train the data on the reduced training set, using *10-fold cross validation* to provide a prediction of the out-of-sample error.
+
+```{r, eval=FALSE}
+train_control <- trainControl(method="cv", number=10)
+
+model = train(trainingData[pRows,pCols], 
+                 trainingData[pRows,oVar], 
+                 method="rf",
+                 trControl=train_control)
+```
+
+
+## Evaluating the performance of the model
+
+This model turns out to be highly accurate with a very good predicted out-of-sample error (<0.1%).
+
+```{r}
+model
+```
+
+Furthermore, if we look at the confusion matrix, we see that under this model, that the confusion is not random but that there are certain techniques which are confused with each other (presumably because they are relatively similar - <sub>given more time this would warrant investigation/confirmation</sub>). In particular, we are not gaining high accuracy due to e.g., unbalanced data etc.
+
+Given such an apparently well performing model, which has been evaluated with cross-validation to increase our confidence in it's accuracy, we can now validate this using our test data.
+
+```{r}
+p = predict(model, testData[, pCols])
+
+confusionMatrix(p, testData[,oVar])
+```
+
+This again confirms that our model has a low out-of-sample error.
+
+Furthermore, when applying this model to the 20 assignment "test" questions, this model achieved a *100%* accuracy on this new data.
+
+
+
+
+*[1]: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. [http://groupware.les.inf.puc-rio.br/har#ixzz3djXmGJWT](http://groupware.les.inf.puc-rio.br/har#ixzz3djXmGJWT)*
