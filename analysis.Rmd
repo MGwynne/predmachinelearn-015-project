@@ -119,7 +119,7 @@ names(trainingData[,pCols])
 
 ## Building a model
 
-As we are dealing with a classification problem, the data from any single predictor or even combinations of multiple overlap considerably, and the sensor data seems unlikely to be additive in any way (e.g., linear regression etc probably wouldn't work that well), a natural first choice classification model is *random forests*.
+As we are dealing with a classification problem, the data from any single predictor, or even combinations of multiple, overlap considerably, and the sensor data seems unlikely to be additive in any way (e.g., linear regression etc probably wouldn't work that well), a natural first choice classification model is *random forests*.
 
 We train the data on the reduced training set, using *10-fold cross validation* to provide a prediction of the out-of-sample error.
 
@@ -141,7 +141,7 @@ This model turns out to be highly accurate with a very good predicted out-of-sam
 model
 ```
 
-Furthermore, if we look at the confusion matrix, we see that under this model, that the confusion is not random but that there are certain techniques which are confused with each other (presumably because they are relatively similar - <sub>given more time this would warrant investigation/confirmation</sub>). In particular, we are not gaining high accuracy due to e.g., unbalanced data etc.
+Furthermore, if we look at the confusion matrix, we see that under this model the confusion is not random but that there are certain techniques which are confused with each other (presumably because they are relatively similar - <sub>given more time this would warrant investigation/confirmation</sub>). In particular, we are not gaining high accuracy due to e.g., unbalanced data etc.
 
 Given such an apparently well performing model, which has been evaluated with cross-validation to increase our confidence in it's accuracy, we can now validate this using our test data.
 
