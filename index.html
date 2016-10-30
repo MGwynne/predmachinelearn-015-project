@@ -161,7 +161,7 @@ pRows = intersect(pRows, nonOutliers)</code></pre>
 </div>
 <div id="building-a-model" class="section level2">
 <h2>Building a model</h2>
-<p>As we are dealing with a classification problem, the data from any single predictor or even combinations of multiple overlap considerably, and the sensor data seems unlikely to be additive in any way (e.g., linear regression etc probably wouldn’t work that well), a natural first choice classification model is <em>random forests</em>.</p>
+<p>As we are dealing with a classification problem, the data from any single predictor, or even combinations of multiple, overlap considerably, and the sensor data seems unlikely to be additive in any way (e.g., linear regression etc probably wouldn’t work that well), a natural first choice classification model is <em>random forests</em>.</p>
 <p>We train the data on the reduced training set, using <em>10-fold cross validation</em> to provide a prediction of the out-of-sample error.</p>
 <pre class="r"><code>train_control &lt;- trainControl(method=&quot;cv&quot;, number=10)
 
@@ -194,7 +194,7 @@ model = train(trainingData[pRows,pCols],
 ## 
 ## Accuracy was used to select the optimal model using  the largest value.
 ## The final value used for the model was mtry = 2.</code></pre>
-<p>Furthermore, if we look at the confusion matrix, we see that under this model, that the confusion is not random but that there are certain techniques which are confused with each other (presumably because they are relatively similar - <sub>given more time this would warrant investigation/confirmation</sub>). In particular, we are not gaining high accuracy due to e.g., unbalanced data etc.</p>
+<p>Furthermore, if we look at the confusion matrix, we see that under this model the confusion is not random but that there are certain techniques which are confused with each other (presumably because they are relatively similar - <sub>given more time this would warrant investigation/confirmation</sub>). In particular, we are not gaining high accuracy due to e.g., unbalanced data etc.</p>
 <p>Given such an apparently well performing model, which has been evaluated with cross-validation to increase our confidence in it’s accuracy, we can now validate this using our test data.</p>
 <pre class="r"><code>p = predict(model, testData[, pCols])
 
